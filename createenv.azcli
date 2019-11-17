@@ -1,0 +1,104 @@
+#az account set --subscription "c0eace6b-deca-4861-8042-b4e807cef056"
+
+#choose RG name
+RG="hackathonerg"
+
+#RG
+az group create --location westeurope --name $RG
+
+#az vm image list --location westeurope --publisher OpenLogic --offer CentOS --sku 7.5 --all -o table
+
+
+#VNET
+limit=30
+NETWORKNAME="hackathonevnet"
+VNETPREF="192.168.0.0/16"
+defaultSUBNET="default-subnet"
+defaultSUBNETPrefix="192.168.0.0/16"
+
+az network nsg create \
+    --resource-group $RG \
+    --location westeurope \
+    --name allnsg
+
+az network nsg rule create \
+    --resource-group $RG \
+    --nsg-name allnsg \
+    --name rule1 \
+    --protocol tcp \
+    --priority 100 \
+    --destination-port-range 80
+
+az network nsg rule create \
+    --resource-group $RG \
+    --nsg-name allnsg \
+    --name rule2 \
+    --protocol tcp \
+    --priority 200 \
+    --destination-port-range 443
+
+az network nsg rule create \
+    --resource-group $RG \
+    --nsg-name allnsg \
+    --name rule3 \
+    --protocol tcp \
+    --priority 300 \
+    --destination-port-range 3389
+
+az network nsg rule create \
+    --resource-group $RG \
+    --nsg-name allnsg \
+    --name rule4 \
+    --protocol tcp \
+    --priority 400 \
+    --destination-port-range 22
+
+az network vnet create -g $RG \
+  -n $NETWORKNAME \
+  --address-prefix $VNETPREF \
+  --subnet-name $defaultSUBNET \
+  --subnet-prefixes $defaultSUBNETPrefix
+
+for i in {1..$limit} 
+do
+    echo "Create Public IP address for group $i group${i}pip $RG"
+    az network public-ip create -n group${i}pip -g $RG --sku Basic --allocation-method Static > /dev/null 
+done
+
+for i in {1..$limit} 
+do
+    echo "Create NIC for group $i group-${i}-nic"
+    az network nic create -g $RG \
+            --name group-${i}-nic \
+            --vnet $NETWORKNAME \
+            --subnet $defaultSUBNET \
+            --public-ip-address group${i}pip \
+            --network-security-group allnsg \
+            --no-wait
+done
+
+LINUX_OSIMAGE="Canonical:UbuntuServer:18.04-LTS:latest"
+WIN_OSIMAGE="MicrosoftWindowsServer:WindowsServer:2019-Datacenter:latest"
+#vm's
+for i in {1..$limit} 
+do
+    user=user${i}adm
+    password=@@@Testtest${i}123@@@${i}
+    az vm create -g $RG \
+            -n groupvm${i} \
+            --image ${LINUX_OSIMAGE} \
+            --size Standard_DS3_v2 \
+            --os-disk-name groupvm${i}osdisk \
+            --nics group-${i}-nic \
+            --os-disk-size-gb 128 \
+            --admin-password $password \
+            --admin-username $user \
+            --no-wait
+done
+
+#delete
+#for i in {1..15} 
+#do
+#    echo "Delete Public IP address for group $i group${i}pip $RG"
+#    az network public-ip delete -n group${i}pip -g $RG > /dev/null 
+#done
